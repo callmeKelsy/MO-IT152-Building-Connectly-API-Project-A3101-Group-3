@@ -1,12 +1,8 @@
-from rest_framework import permissions
+from rest_framework.permissions import BasePermission
 
-class IsPostAuthor(permissions.BasePermission):
+class IsPostAuthor(BasePermission):
     """
-    Custom permission to only allow post authors to view/edit their posts.
+    Custom permission to allow only the author of a post or an admin to edit/delete it.
     """
     def has_object_permission(self, request, view, obj):
-       
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        
-        return obj.author == request.user or request.user.is_staff
+        return obj.author == request.user or request.user.is_staff  # ✅ Now allows admin users

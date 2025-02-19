@@ -7,8 +7,8 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login
 from django.http import JsonResponse
 
-from .models import Post  #  Ensure Post model is imported
-from .serializers import UserSerializer, PostSerializer  # ✅ Ensure serializers are imported
+from .models import Post 
+from .serializers import UserSerializer, PostSerializer  
 from .permissions import IsPostAuthor
 
 
@@ -25,23 +25,37 @@ class PostListCreate(ListCreateAPIView):
 
 
 #  Comment List & Create View (Make sure you have a Comment model)
-from .models import Comment  #  Ensure Comment model exists
-from .serializers import CommentSerializer  #  Ensure serializer exists
+from .models import Comment  
+from .serializers import CommentSerializer  
 
 class CommentListCreate(ListCreateAPIView):
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
 
 
-#  Post Detail View
 class PostDetailView(APIView):
     permission_classes = [IsAuthenticated, IsPostAuthor]
 
     def get(self, request, pk):
-        post = get_object_or_404(Post, pk=pk)  
-        self.check_object_permissions(request, post)  
-        return Response({"content": post.content})
+        post = get_object_or_404(Post, pk=pk)
+        self.check_object_permissions(request, post)
+        serializer = PostSerializer(post)
+        return Response(serializer.data)
 
+    def put(self, request, pk): 
+        post = get_object_or_404(Post, pk=pk)
+        self.check_object_permissions(request, post)
+        serializer = PostSerializer(post, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    def delete(self, request, pk): 
+        post = get_object_or_404(Post, pk=pk)
+        self.check_object_permissions(request, post)
+        post.delete()
+        return Response({"message": "Post deleted successfully"}, status=204)
 
 #  Admin-Only View
 class AdminOnlyView(APIView):
@@ -49,7 +63,6 @@ class AdminOnlyView(APIView):
 
     def get(self, request):
         return Response({"message": "This is an admin-only view"})
-
 
 #  Login User View
 def login_user(request):
@@ -73,8 +86,59 @@ class ProtectedView(APIView):
     """
     A protected API endpoint that requires authentication.
     """
-    authentication_classes = [TokenAuthentication]  # Uses Token Authentication
-    permission_classes = [IsAuthenticated]  # Restricts access to authenticated users only
+    authentication_classes = [TokenAuthentication]  
+    permission_classes = [IsAuthenticated]  
 
     def get(self, request):
         return Response({"message": "Authenticated successfully!", "user": request.user.username})
+
+from rest_framework import viewsets
+from .models import Post, Comment
+from .serializers import PostSerializer, CommentSerializer
+
+class PostViewSet(viewsets.ModelViewSet):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+
+class CommentViewSet(viewsets.ModelViewSet):
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+
+from rest_framework import generics
+from .models import Comment
+from .serializers import CommentSerializer
+
+class PostCommentsView(generics.ListAPIView):  # Ensure this exists
+    serializer_class = CommentSerializer
+
+    def get_queryset(self):
+        post_id = self.kwargs['pk']
+        return Comment.objects.filter(post_id=post_id)
+    
+from rest_framework import generics
+from .models import Comment
+from .serializers import CommentSerializer
+
+class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):  # ✅ Allows GET, PUT, DELETE
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+
+from rest_framework import generics
+from django.contrib.auth.models import User
+from .serializers import UserSerializer
+
+class UserDetailView(generics.RetrieveUpdateDestroyAPIView):  # ✅ Allows GET, PUT, DELETE
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+from rest_framework.generics import RetrieveUpdateDestroyAPIView
+from .models import User
+from .serializers import UserSerializer
+
+class UserDetailView(RetrieveUpdateDestroyAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+
+
+
