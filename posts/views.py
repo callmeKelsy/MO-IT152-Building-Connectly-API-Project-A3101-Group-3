@@ -1,144 +1,178 @@
-from rest_framework.views import APIView
-from rest_framework.generics import ListCreateAPIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from django.shortcuts import get_object_or_404
-from django.contrib.auth.models import User
-from django.contrib.auth import authenticate, login
-from django.http import JsonResponse
+from rest_framework import serializers
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from .models import Post, Comment, User
 
-from .models import Post 
-from .serializers import UserSerializer, PostSerializer  
-from .permissions import IsPostAuthor
+# User serializer
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']
 
-
-#  User List & Create View
+# User list and create view
 class UserListCreate(ListCreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        # Add any logic you need here for user creation
+        serializer.save()
 
-#  Post List & Create View
+# User detail view
+class UserDetailView(RetrieveUpdateDestroyAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+# Post serializer
+class PostSerializer(serializers.ModelSerializer):
+    author = serializers.PrimaryKeyRelatedField(read_only=True)  # Only return author ID
+
+    class Meta:
+        model = Post
+        fields = ['id', 'title', 'content', 'post_type', 'author', 'metadata']
+
+# Post list and create view
 class PostListCreate(ListCreateAPIView):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
+    permission_classes = [AllowAny]
 
+    def perform_create(self, serializer):
+        """ Auto-assigns the authenticated user as the post author """
+        serializer.save(author=self.request.user)
 
-#  Comment List & Create View (Make sure you have a Comment model)
-from .models import Comment  
-from .serializers import CommentSerializer  
+# Post detail view
+class PostDetailView(RetrieveUpdateDestroyAPIView):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticated]
 
+# Comment serializer
+class CommentSerializer(serializers.ModelSerializer):
+    author = serializers.PrimaryKeyRelatedField(read_only=True)  # Auto-assign author ID
+    post = serializers.PrimaryKeyRelatedField(queryset=Post.objects.all(), required=False)  # Auto-assign post ID
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'content', 'author', 'post', 'created_at']
+
+    def create(self, validated_data):
+        """ Auto-assign post from view """
+        post = self.context.get('post')
+        if not post:
+            raise serializers.ValidationError({"post": "This field is required."})
+        return Comment.objects.create(post=post, **validated_data)
+
+# Comment list and create view
 class CommentListCreate(ListCreateAPIView):
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        """ Auto-assigns the authenticated user as the comment author """
+        serializer.save(author=self.request.user)
 
-class PostDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsPostAuthor]
-
-    def get(self, request, pk):
-        post = get_object_or_404(Post, pk=pk)
-        self.check_object_permissions(request, post)
-        serializer = PostSerializer(post)
-        return Response(serializer.data)
-
-    def put(self, request, pk): 
-        post = get_object_or_404(Post, pk=pk)
-        self.check_object_permissions(request, post)
-        serializer = PostSerializer(post, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        return Response(serializer.errors, status=400)
-
-    def delete(self, request, pk): 
-        post = get_object_or_404(Post, pk=pk)
-        self.check_object_permissions(request, post)
-        post.delete()
-        return Response({"message": "Post deleted successfully"}, status=204)
-
-#  Admin-Only View
-class AdminOnlyView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get(self, request):
-        return Response({"message": "This is an admin-only view"})
-
-#  Login User View
-def login_user(request):
-    if request.method == "POST":
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return JsonResponse({"message": "Login successful"})
-        else:
-            return JsonResponse({"message": "Invalid credentials"}, status=401)
-    return JsonResponse({"message": "Invalid request"}, status=400)
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
-
-class ProtectedView(APIView):
-    """
-    A protected API endpoint that requires authentication.
-    """
-    authentication_classes = [TokenAuthentication]  
-    permission_classes = [IsAuthenticated]  
-
-    def get(self, request):
-        return Response({"message": "Authenticated successfully!", "user": request.user.username})
-
-from rest_framework import viewsets
-from .models import Post, Comment
-from .serializers import PostSerializer, CommentSerializer
-
-class PostViewSet(viewsets.ModelViewSet):
-    queryset = Post.objects.all()
-    serializer_class = PostSerializer
-
-class CommentViewSet(viewsets.ModelViewSet):
+# Comment detail view
+class CommentDetailView(RetrieveUpdateDestroyAPIView):
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
 
-from rest_framework import generics
+# Optional: If you really want a separate CreatePostView
+class CreatePostView(ListCreateAPIView):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        """ Custom logic to create a post """
+        serializer.save(author=self.request.user)
+
+# views.py
+from rest_framework.generics import ListAPIView
 from .models import Comment
 from .serializers import CommentSerializer
+from rest_framework.permissions import IsAuthenticated
 
-class PostCommentsView(generics.ListAPIView):  # Ensure this exists
+# PostCommentsView to list all comments related to a specific post
+class PostCommentsView(ListAPIView):
     serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         post_id = self.kwargs['pk']
         return Comment.objects.filter(post_id=post_id)
-    
-from rest_framework import generics
-from .models import Comment
-from .serializers import CommentSerializer
 
-class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):  # ✅ Allows GET, PUT, DELETE
-    queryset = Comment.objects.all()
-    serializer_class = CommentSerializer
+# views.py
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework import status
 
-from rest_framework import generics
-from django.contrib.auth.models import User
+# Login view (dummy example, you can modify this as per your logic)
+@api_view(['POST'])
+def login_user(request):
+    # Here you can handle login logic
+    # For example, you can authenticate the user and return a token or session.
+    return Response({"message": "Login successful!"}, status=status.HTTP_200_OK)
+
+# views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+
+class AdminOnlyView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        return Response({"message": "This is a protected admin view!"})
+
+# views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+
+class ProtectedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"message": "This is a protected view!"})
+
+from rest_framework.generics import ListAPIView, CreateAPIView
+from rest_framework.permissions import AllowAny
+from django.contrib.auth import get_user_model
 from .serializers import UserSerializer
 
-class UserDetailView(generics.RetrieveUpdateDestroyAPIView):  # ✅ Allows GET, PUT, DELETE
+User = get_user_model()
+
+# List all users (GET request)
+class UserListView(ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [AllowAny]  # Change this based on authentication needs
 
-from rest_framework.generics import RetrieveUpdateDestroyAPIView
-from .models import User
-from .serializers import UserSerializer
-
-class UserDetailView(RetrieveUpdateDestroyAPIView):
+# Create a new user (POST request)
+class UserCreateView(CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [AllowAny]
 
+from django.shortcuts import render
+from django.http import JsonResponse
+
+def login_view(request):
+    if request.method == 'POST':
+        # Get the username and password from the POST data
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        
+        # Add your authentication logic here
+        
+        return JsonResponse({"message": "Login successful"})  # Or return appropriate response
+    else:
+        return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
 

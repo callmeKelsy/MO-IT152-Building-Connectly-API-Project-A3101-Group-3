@@ -1,40 +1,33 @@
 from rest_framework import serializers
-from .models import User, Post, Comment  
-
+from .models import User, Post, Comment
 
 class UserSerializer(serializers.ModelSerializer):
-    """ Serializer for User model, excluding sensitive fields """
-    
     class Meta:
         model = User
-        fields = ['id', 'username', 'email'] 
+        fields = ['id', 'username', 'email']
 
 
 class PostSerializer(serializers.ModelSerializer):
-    """ Serializer for Post model, including related comments """
-    
-    comments = serializers.StringRelatedField(many=True, read_only=True)
+    author = serializers.PrimaryKeyRelatedField(read_only=True)  # ✅ Only return author ID
 
     class Meta:
         model = Post
-        fields = ['id', 'content', 'author', 'created_at', 'comments']
+        fields = ['id', 'title', 'content', 'post_type', 'author', 'metadata']
 
 
 class CommentSerializer(serializers.ModelSerializer):
-    """ Serializer for Comment model with validation """
-    
+    author = serializers.PrimaryKeyRelatedField(read_only=True)  # ✅ Auto-assign author ID
+    post = serializers.PrimaryKeyRelatedField(queryset=Post.objects.all())   # ✅ Auto-assign post ID
+
     class Meta:
         model = Comment
-        fields = ['id', 'text', 'author', 'post', 'created_at']
+        fields = ['id', 'content', 'author', 'post', 'created_at']
 
-    def validate_post(self, value):
-        """ Validate if post exists before allowing comment creation """
-        if not Post.objects.filter(id=value.id).exists():
-            raise serializers.ValidationError("Post not found.")
-        return value
+    def create(self, validated_data):
+        """ ✅ Auto-assign post from view """
+        post = self.context.get('post')  # ✅ Correct context retrieval
+        if not post:
+            raise serializers.ValidationError({"post": "This field is required."})
 
-    def validate_author(self, value):
-        """ Validate if author exists before assigning comment """
-        if not User.objects.filter(id=value.id).exists():
-            raise serializers.ValidationError("Author not found.")
-        return value
+        # Create the comment with the post auto-assigned
+        return Comment.objects.create(post=post, **validated_data)

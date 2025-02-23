@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\ADMIN\Downloads\Week 4\MO-IT152-Building-Connectly-API-Project-A3101-callmeKelsy-Week4\ipt-api-branch-week4-demo\connectly_project\venv
+set VIRTUAL_ENV=C:\Users\ADMIN\Downloads\Week 4\MO-IT152-Building-Connectly-API-Project-A3101-callmeKelsy\venv
 
 if not defined PROMPT set PROMPT=$P$G
 
